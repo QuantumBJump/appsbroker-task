@@ -15,4 +15,5 @@ FROM gcr.io/distroless/base
 
 WORKDIR /hello-world
 COPY --from=build /app .
+COPY /template ./template
 ENTRYPOINT ["./app"]
