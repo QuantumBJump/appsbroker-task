@@ -1,16 +1,22 @@
 package main
 
 import (
+	"context"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
+
+	storage "cloud.google.com/go/storage"
 )
 
 const defaultAddr = ":8080"
 
 type templateData struct {
-	Message string
+	Message      string
+	CloudStorage string
 }
 
 var (
@@ -19,6 +25,31 @@ var (
 )
 
 func main() {
+	// Create Google Storage client
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create client!")
+	}
+
+	bkt := client.Bucket("appsbroker-task-static-blobstore")
+
+	obj := bkt.Object("testdata.txt")
+	r, err := obj.NewReader(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create object reader: %+v", err)
+	}
+	defer r.Close()
+	contents := new(strings.Builder)
+	_, err = io.Copy(contents, r)
+	if err != nil {
+		log.Fatalf("Failed to read contents: %+v", err)
+	}
+
+	content_string := contents.String()
+
+	log.Printf("File contents: %s", content_string)
+
 	println("Hello world!")
 	t, err := template.ParseFiles("template/index.html")
 	if err != nil {
@@ -28,7 +59,8 @@ func main() {
 	tmpl = t
 
 	data = templateData{
-		Message: "Hello, world!",
+		Message:      "Hello, world!",
+		CloudStorage: content_string,
 	}
 
 	addr := defaultAddr
