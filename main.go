@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"html/template"
 	"io"
 	"log"
@@ -9,7 +11,8 @@ import (
 	"os"
 	"strings"
 
-	storage "cloud.google.com/go/storage"
+	"cloud.google.com/go/storage"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 const defaultAddr = ":8080"
@@ -17,6 +20,14 @@ const defaultAddr = ":8080"
 type templateData struct {
 	Message      string
 	CloudStorage string
+	CloudSQL     []SQLObj
+}
+
+type SQLObj struct {
+	ID  int    `json:"id"`
+	Foo string `json:"Foo"`
+	Bar string `json:"Bar"`
+	Baz string `json:"Baz"`
 }
 
 var (
@@ -25,6 +36,8 @@ var (
 )
 
 func main() {
+	println("Hello world!")
+
 	// Create Google Storage client
 	ctx := context.Background()
 	client, err := storage.NewClient(ctx)
@@ -39,7 +52,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create object reader: %+v", err)
 	}
-	defer r.Close()
 	contents := new(strings.Builder)
 	_, err = io.Copy(contents, r)
 	if err != nil {
@@ -47,10 +59,40 @@ func main() {
 	}
 
 	content_string := contents.String()
+	r.Close()
 
 	log.Printf("File contents: %s", content_string)
 
-	println("Hello world!")
+	// SQL interaction
+	dbUsername := os.Getenv("DB_USER")
+	dbPassword := os.Getenv("DB_PASS")
+	dbName := os.Getenv("DB_NAME")
+	dbConnect := fmt.Sprintf("%s:%s@tcp(127.0.0.1:3306)/%s", dbUsername, dbPassword, dbName)
+
+	db, err := sql.Open("mysql", dbConnect)
+	if err != nil {
+		log.Fatalf("Unable to connect to database: %+v", err)
+	}
+
+	results, err := db.Query("SELECT * FROM testdata")
+	if err != nil {
+		log.Fatalf("Failed to get results: %+v", err)
+	}
+
+	objects := []SQLObj{}
+
+	for results.Next() {
+		var object SQLObj
+		err = results.Scan(&object.ID, &object.Foo, &object.Bar, &object.Baz)
+		if err != nil {
+			log.Fatalf("Failed to scan results: %+v", err)
+		}
+		objects = append(objects, object)
+		log.Printf("ID: %d, Foo: %s, Bar: %s, Baz: %s", object.ID, object.Foo, object.Bar, object.Baz)
+	}
+
+	db.Close()
+	// Generate and display template
 	t, err := template.ParseFiles("template/index.html")
 	if err != nil {
 		log.Fatalf("Error parsing template: %+v", err)
@@ -61,6 +103,7 @@ func main() {
 	data = templateData{
 		Message:      "Hello, world!",
 		CloudStorage: content_string,
+		CloudSQL:     objects,
 	}
 
 	addr := defaultAddr
